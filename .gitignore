@@ -1,0 +1,13 @@
+# --- ROS 2 垃圾檔案 (自動編譯產生) ---
+ros2_ws/build/
+ros2_ws/install/
+ros2_ws/log/
+
+# --- Python 快取 ---
+__pycache__/
+*.py[cod]
+
+# --- 編輯器暫存檔 ---
+.vscode/
+.idea/
+*.swp
