@@ -4,7 +4,7 @@ Robot Middleware,	ROS 2,			Humble Hawksbill,		機器人通訊核心 (大腦)
 Simulator,		Gazebo,			Harmonic (v8),			物理模擬器 (Sim)
 Autopilot Firmware,	PX4-Autopilot,		Main (v1.14+),			飛控固件 (小腦)
 Comm Bridge,		Micro-XRCE-DDS,		Latest (3 Agents),		負責 PX4 <-> ROS 2 的通訊 (Port 8888, 8890, 8892)
-Bridge Package,     ros-humble-ros-gzharmonic,  Harmonic Bridge,        負責 Lidar 數據轉換 (Gazebo -> ROS 2)
+Bridge Package,     ros-humble-ros-gzharmonic,  Harmonic Bridge,        	負責 Lidar 數據轉換 (Gazebo -> ROS 2)
 
 ------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -40,18 +40,20 @@ python3 formation_flight.py
 # 3. 飛機將起飛並執行正方形編隊巡航。
 
 ------------------------------------------------------------------------------------------------------------------------------------------
+# 步驟三：監聽真實位置 (Ground Truth) 數據流分析
+# 用來計算編隊誤差 (Reward Function 基礎)
+# 檢測 Gazebo 底層原始數據：
+gz topic -e -t /model/x500_lidar_2d_0/pose
 
-# 步驟三：監聽真實位置 (Ground Truth)
-# 用來比對編隊誤差
-gz topic -e -t /world/default/model/x500_lidar_2d_0/pose
-
+# 檢測 ROS 2 轉換後數據 (TF 格式)：
+ros2 topic echo /gt_pose_0
 ------------------------------------------------------------------------------------------------------------------------------------------
 
 # 常見問題除錯 (Troubleshooting)
 
 # Q1: 終端機顯示 "Package 'ros_gz_bridge' not found" ?
 # A1: 請安裝正確版本的 Bridge:
-# sudo apt install ros-humble-ros-gzharmonic
+sudo apt install ros-humble-ros-gzharmonic
 
 # Q2: 執行 Python 腳本後飛機沒反應，一直顯示 "嘗試切換..." ?
 # A2: 檢查 Topic 名稱是否匹配。新版 PX4 可能使用 `vehicle_status_v1`。
