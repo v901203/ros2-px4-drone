@@ -16,6 +16,17 @@ Bridge Package,     ros-humble-ros-gzharmonic,  Harmonic Bridge,        	負責 
 https://github.com/v901203/ros2-px4-drone,	GitHub 遠端倉庫
 
 ------------------------------------------------------------------------------------------------------------------------------------------
+修改了x500_lidar_2d模型設定，強迫 Gazebo 的物理引擎在每一幀計算後，將無人機的真實座標發布到 /model/x500_lidar_2d_x/pose 這個 Topic 上。
+gedit ~/src/PX4-Autopilot/Tools/simulation/gz/models/x500_lidar_2d/model.sdf
+加入<plugin
+      filename="gz-sim-pose-publisher-system"
+      name="gz::sim::systems::PosePublisher">
+      <publish_link_pose>true</publish_link_pose>
+      <use_pose_vector_msg>true</use_pose_vector_msg>
+      <static_publisher>true</static_publisher>
+      <static_update_frequency>10</static_update_frequency>
+    </plugin>
+------------------------------------------------------------------------------------------------------------------------------------------
 
 # 步驟一：啟動多機模擬環境
 cd ~/Desktop/drone
