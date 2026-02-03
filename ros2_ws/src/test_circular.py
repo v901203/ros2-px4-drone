@@ -51,12 +51,11 @@ class FormationControlNode(Node):
             
             self.pubs.extend([p_offboard, p_trajectory, p_command])
             
-            # Subscribers (Output topics often have _v1 in newer PX4/Agent versions)
+            # Subscribers (Output topics usually don't have _v1 in standard ROS2/PX4 setup)
             def status_cb(msg, sys_id=i): self.vehicle_status[sys_id] = msg
             def pos_cb(msg, sys_id=i): self.vehicle_local_position[sys_id] = msg
             
-            # Try both v1 and non-v1 just in case, or stick to what we saw in `ros2 topic list`
-            # We saw _v1 for outgoing topics
+            # Using v1 as confirmed by other working scripts in the workspace
             self.create_subscription(VehicleStatus, f'{ns}/out/vehicle_status_v1', status_cb, qos_profile)
             self.create_subscription(VehicleLocalPosition, f'{ns}/out/vehicle_local_position_v1', pos_cb, qos_profile)
 
