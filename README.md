@@ -16,8 +16,19 @@ Bridge Package,     ros-humble-ros-gzharmonic,  Harmonic Bridge,        	負責 
 https://github.com/v901203/ros2-px4-drone,	GitHub 遠端倉庫
 
 ------------------------------------------------------------------------------------------------------------------------------------------
+
+# 程式功能詳解 (Scripts Detail)
+
+| 檔案名稱 (File) | 所在路徑 (Path) | 功能說明 (Function) |
+|---|---|---|
+| `run_monitor.sh` | Project Root | **診斷啟動腳本**。自動建立 ROS-GZ Bridge 連線，並執行 `compare.py` 監控位置誤差。 |
+| `compare.py` | `ros2_ws/src/` | **座標診斷節點**。同時訂閱 PX4 的估測位置 (Local Position) 與 Gazebo 的真實位置 (Ground Truth)，計算並顯示兩者誤差。 |
+| `test_flight.py` | `ros2_ws/src/` | **起飛測試節點**。強制解鎖所有無人機並控制其起飛至指定高度，用於測試通訊鏈路與 Offboard 控制權。 |
+| `test_circular.py` | `ros2_ws/src/` | **圓形編隊節點**。控制三台無人機 (Leader + 2 Wingman) 進行協同圓形繞飛，驗證多機控制邏輯。 |
+
+------------------------------------------------------------------------------------------------------------------------------------------
 修改了x500_lidar_2d模型設定，強迫 Gazebo 的物理引擎在每一幀計算後，將無人機的真實座標發布到 /model/x500_lidar_2d_x/pose 這個 Topic 上。
-gedit ~/src/PX4-Autopilot/Tools/simulation/gz/models/x500_lidar_2d/model.sdf
+code ~/src/PX4-Autopilot/Tools/simulation/gz/models/x500_lidar_2d/model.sdf
 加入<plugin
       filename="gz-sim-pose-publisher-system"
       name="gz::sim::systems::PosePublisher">
@@ -58,6 +69,20 @@ gz topic -e -t /model/x500_lidar_2d_0/pose
 
 # 檢測 ROS 2 轉換後數據 (TF 格式)：
 ros2 topic echo /gt_pose_0
+------------------------------------------------------------------------------------------------------------------------------------------
+
+# 常用 PX4 Console 指令 (Manual Commands)
+# 如果自動腳本失效，可以直接在 PX4 Terminal 輸入以下指令：
+
+# 1. 關閉所有安全檢查
+param set COM_ARM_WO_GPS 1
+param set NAV_RCL_ACT 0
+param set BAT_LOW_THR 0.0
+
+# 2. 強制解鎖並起飛
+commander arm -f
+commander takeoff
+
 ------------------------------------------------------------------------------------------------------------------------------------------
 
 # 常見問題除錯 (Troubleshooting)

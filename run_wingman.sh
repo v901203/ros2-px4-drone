@@ -20,6 +20,15 @@ export PX4_GZ_MODEL=x500_lidar_2d    # 指定要有雷達的模型
 export PX4_SIM_MODEL=x500_lidar_2d   # 雙重保險
 export PX4_GZ_MODEL_POSE="$POSE"
 
+# === 關閉解鎖檢查與安全防護 ===
+export PX4_PARAM_COM_ARM_WO_GPS=1
+export PX4_PARAM_NAV_RCL_ACT=0
+export PX4_PARAM_NAV_DLL_ACT=0
+export PX4_PARAM_COM_RCL_EXCEPT=4
+export PX4_PARAM_BAT_LOW_THR=0.0
+export PX4_PARAM_BAT_CRIT_THR=0.0
+export PX4_PARAM_BAT_EMERGEN_THR=0.0
+
 # 進入目錄並執行
 cd "$PX4_DIR"
 echo "🚀 正在啟動僚機 $ID..."
