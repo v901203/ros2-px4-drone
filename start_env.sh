@@ -4,59 +4,60 @@
 pkill -9 -f px4
 pkill -9 -f gz
 pkill -9 -f MicroXRCEAgent
-pkill -9 -f ruby
+pkill -9 -f mono
 ros2 daemon stop
-echo "🧹 環境清理完畢..."
+echo "豐富環境清理完畢..."
 sleep 2
 ros2 daemon start
 
-# === 重要：統一所有無人機的座標原點 (對齊北方與座標系) ===
+# === 重要：座標與路徑設定 ===
 export PX4_HOME_LAT=24.8485
 export PX4_HOME_LON=121.0150
 export PX4_HOME_ALT=0.0
+export MISSION_PLANNER_PATH="$HOME/MissionPlanner/MissionPlanner.exe"
 
-# === 自動部署修改過的模型檔案 (確保 Git 內的設定生效) ===
-if [ -f "${PWD}/models/x500_lidar_2d/model.sdf" ]; then
-    echo "📂 檢測到客製化模型，正在覆寫 PX4 設定..."
-    mkdir -p ~/src/PX4-Autopilot/Tools/simulation/gz/models/x500_lidar_2d
-    cp "${PWD}/models/x500_lidar_2d/model.sdf" ~/src/PX4-Autopilot/Tools/simulation/gz/models/x500_lidar_2d/model.sdf
+# === ⭐️ Mission Planner 自動安裝與檢查 ===
+if [ ! -f "$MISSION_PLANNER_PATH" ]; then
+    echo "⚠️  找不到 Mission Planner，嘗試執行安裝..."
+    if [ -f "./install_mp.sh" ]; then
+        chmod +x install_mp.sh
+        ./install_mp.sh
+    fi
 fi
 
-# 1. 啟動 DDS Agents (確認 Port 號分別為 8888, 8890, 8892)
-echo "📡 啟動通訊中繼站 (DDS Agents)..."
+# 1. 啟動 DDS Agents
+echo "📡 啟動 Micro-XRCE-DDS Agents..."
 gnome-terminal --tab --title="Agent Leader" -- bash -c "MicroXRCEAgent udp4 -p 8888; exec bash"
 gnome-terminal --tab --title="Agent Left" -- bash -c "MicroXRCEAgent udp4 -p 8890; exec bash"
 gnome-terminal --tab --title="Agent Right" -- bash -c "MicroXRCEAgent udp4 -p 8892; exec bash"
 
-sleep 3
+sleep 2
 
 # 2. 啟動隊長機 (Leader, ID=1)
+# 預設 MAVLink UDP Port: 14550
 echo "🚀 啟動隊長機 (Leader)..."
 gnome-terminal --tab --title="Leader (ID 1)" -- bash -c "cd ~/src/PX4-Autopilot && \
-export PX4_GZ_WORLD=default && \
-export PX4_PARAM_COM_ARM_WO_GPS=1 && \
-export PX4_PARAM_NAV_RCL_ACT=0 && \
-export PX4_PARAM_NAV_DLL_ACT=0 && \
-export PX4_PARAM_COM_RCL_EXCEPT=4 && \
-export PX4_PARAM_BAT_LOW_THR=0.0 && \
-export PX4_PARAM_BAT_CRIT_THR=0.0 && \
-export PX4_PARAM_BAT_EMERGEN_THR=0.0 && \
-PX4_GZ_MODEL_POSE='0,0,0.2,0,0,0' \
 PX4_SYS_ID=1 make px4_sitl gz_x500_lidar_2d; exec bash"
 
-echo "⏳ 等待 Leader 載入 (20秒)..."
-sleep 20
+sleep 15
 
-# 3. 啟動僚機
-# 請確認 run_wingman.sh 內部使用的 Port 號與上面的 Agent 對應
-# 1 號僚機 (SYS_ID 2) -> 連接 8890
-echo "🚀 啟動左僚機 (物理位置 -2, 2)..."
-gnome-terminal --tab --title="Left Wing (ID 2)" -- bash -c "./run_wingman.sh 1 '-2,2,0.2,0,0,0'; exec bash"
+# 3. 啟動僚機 (透過修改過的 run_wingman.sh)
+# Gazebo ENU: x=東, y=北。 PX4 NED offset (-2,2) → Gazebo (y_ned=2, x_ned=-2) = (2,-2,0.2)
+# 僚機 1 (ID 2) -> MAVLink Port 14552
+echo "🚀 啟動左僚機..."
+gnome-terminal --tab --title="Left Wing (ID 2)" -- bash -c "./run_wingman.sh 1 '2,-2,0.2,0,0,0'; exec bash"
 
 sleep 5
 
-# 2 號僚機 (SYS_ID 3) -> 連接 8892
-echo "🚀 啟動右僚機 (物理位置 -2, -2)..."
+# PX4 NED offset (-2,-2) → Gazebo (-2,-2,0.2) ← 原本就正確
+# 僚機 2 (ID 3) -> MAVLink Port 14553
+echo "🚀 啟動右僚機..."
 gnome-terminal --tab --title="Right Wing (ID 3)" -- bash -c "./run_wingman.sh 2 '-2,-2,0.2,0,0,0'; exec bash"
 
-echo "✅ 腳本啟動完成！"
+# 4. 啟動 Mission Planner
+if [ -f "$MISSION_PLANNER_PATH" ]; then
+    echo "🗺️  正在啟動 Mission Planner (請連線至 UDP 14550)..."
+    gnome-terminal --tab --title="Mission Planner" -- bash -c "mono '$MISSION_PLANNER_PATH'; exec bash"
+fi
+
+echo "✅ 所有系統已就緒！"

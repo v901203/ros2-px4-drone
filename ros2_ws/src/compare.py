@@ -148,26 +148,19 @@ class CoordDiagnosticNode(Node):
             world_y_est = px4_local_n + spawn_world_y
             world_z_est = -px4_local_d
             
-            radius_est = math.sqrt(world_x_est**2 + world_y_est**2)
-            angle_est = math.degrees(math.atan2(world_y_est, world_x_est))
-            
             print(f"\n--- [{role}] ---")
             print(f"  📍 物理出生點 (ENU): x={spawn_world_x:.2f}, y={spawn_world_y:.2f}")
             print(f"  🎯 PX4 局部 (NED):   N={px4_local_n:.2f}, E={px4_local_e:.2f}, D={px4_local_d:.2f}")
             print(f"  🌍 推算世界 (ENU):   x={world_x_est:.2f}, y={world_y_est:.2f}, z={world_z_est:.2f}")
-            print(f"  📐 圓周參數:        半徑={radius_est:.2f}m, 角度={angle_est:.1f}°")
             
             if g is not None:
                 error_x = world_x_est - g[0]
                 error_y = world_y_est - g[1]
-                error_dist = math.sqrt(error_x**2 + error_y**2)
-                
-                gz_radius = math.sqrt(g[0]**2 + g[1]**2)
-                gz_angle = math.degrees(math.atan2(g[1], g[0]))
+                error_z = world_z_est - g[2]
+                error_dist = math.sqrt(error_x**2 + error_y**2 + error_z**2)
                 
                 print(f"  ✅ Gazebo 真實座標: x={g[0]:.2f}, y={g[1]:.2f}, z={g[2]:.2f}")
-                print(f"  ✅ Gazebo 圓周參數: 半徑={gz_radius:.2f}m, 角度={gz_angle:.1f}°")
-                print(f"  ⚖️  座標誤差:       dx={error_x:.2f}, dy={error_y:.2f}, 距離={error_dist:.2f}m")
+                print(f"  ⚖️  座標誤差:       dx={error_x:.2f}, dy={error_y:.2f}, dz={error_z:.2f}, 距離={error_dist:.2f}m")
                 
                 if abs(error_dist) > 1.0:
                     print(f"  ⚠️  誤差 {error_dist:.2f}m > 1.0m！")
