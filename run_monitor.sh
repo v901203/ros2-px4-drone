@@ -12,23 +12,33 @@ fi
 # 改用個別 Pose 轉發，確保能區分是哪台無人機
 echo "🌉 正在啟動 ROS GZ Bridge (個別 Topic 模式)..."
 ros2 run ros_gz_bridge parameter_bridge \
-    /model/x500_lidar_2d_0/pose@geometry_msgs/msg/Pose@gz.msgs.Pose \
-    /model/x500_lidar_2d_1/pose@geometry_msgs/msg/Pose@gz.msgs.Pose \
-    /model/x500_lidar_2d_2/pose@geometry_msgs/msg/Pose@gz.msgs.Pose \
+    /world/default/dynamic_pose/info@geometry_msgs/msg/PoseArray@gz.msgs.Pose_V \
+    /world/default/model/x500_lidar_2d_0/link/link/sensor/lidar_2d_v2/scan@sensor_msgs/msg/LaserScan@gz.msgs.LaserScan \
+    /world/default/model/x500_lidar_2d_1/link/link/sensor/lidar_2d_v2/scan@sensor_msgs/msg/LaserScan@gz.msgs.LaserScan \
+    /world/default/model/x500_lidar_2d_2/link/link/sensor/lidar_2d_v2/scan@sensor_msgs/msg/LaserScan@gz.msgs.LaserScan \
     --ros-args \
-    -r /model/x500_lidar_2d_0/pose:=/gz_pose_0 \
-    -r /model/x500_lidar_2d_1/pose:=/gz_pose_1 \
-    -r /model/x500_lidar_2d_2/pose:=/gz_pose_2 &
+    -r /world/default/dynamic_pose/info:=/gz_dynamic_pose \
+    -r /world/default/model/x500_lidar_2d_0/link/link/sensor/lidar_2d_v2/scan:=/drone_0/scan \
+    -r /world/default/model/x500_lidar_2d_1/link/link/sensor/lidar_2d_v2/scan:=/drone_1/scan \
+    -r /world/default/model/x500_lidar_2d_2/link/link/sensor/lidar_2d_v2/scan:=/drone_2/scan &
 BRIDGE_PID=$!
 sleep 2
 
 # 2. 檢查 Bridge 是否有資料 (短暫 Echo 第一台)
-echo "📡 檢查 Gazebo 數據流 (/gz_pose_0)..."
-timeout 2s ros2 topic echo /gz_pose_0 | head -n 3
+echo "📡 檢查 Gazebo 動態姿態流 (/gz_dynamic_pose)..."
+timeout 2s ros2 topic echo /gz_dynamic_pose | head -n 3
 if [ $? -eq 124 ]; then
-    echo "✅ 數據流正常 (timeout 是預期的)"
+    echo "✅ 動態姿態流正常 (timeout 是預期的)"
 else
-    echo "⚠️  警告：可能沒有收到 Gazebo 數據，請確認模擬器是否開啟"
+    echo "⚠️  警告：可能沒有收到 Gazebo 姿態數據，請確認模擬器是否開啟"
+fi
+
+echo "📡 檢查雷達數據流 (/drone_0/scan)..."
+timeout 2s ros2 topic echo /drone_0/scan | head -n 3
+if [ $? -eq 124 ]; then
+    echo "✅ 雷達數據流正常 (timeout 是預期的)"
+else
+    echo "⚠️  警告：可能沒有收到雷達數據，請確認 lidar topic 名稱是否正確"
 fi
 
 # 3. 啟動 Python 診斷程式

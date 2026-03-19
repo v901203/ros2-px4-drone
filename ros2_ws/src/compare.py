@@ -3,11 +3,9 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 from px4_msgs.msg import VehicleLocalPosition
-import subprocess
-import threading
-import re
+from geometry_msgs.msg import PoseArray
+from sensor_msgs.msg import LaserScan
 import math
-import time
 
 class CoordDiagnosticNode(Node):
     def __init__(self):
@@ -15,7 +13,7 @@ class CoordDiagnosticNode(Node):
 
         self.spawn_points = [
             [0.0, 0.0],    # Leader (Instance 0)
-            [-2.0, 2.0],   # Left Wing (Instance 1)
+            [2.0, -2.0],   # Left Wing (Instance 1)
             [-2.0, -2.0]   # Right Wing (Instance 2)
         ]
         
@@ -27,7 +25,8 @@ class CoordDiagnosticNode(Node):
 
         self.vehicle_positions = [None, None, None]
         self.gz_pos = [None, None, None]
-        self.running = True
+        self.lidar_status = [None, None, None]
+        self.last_lidar_stamp = [None, None, None]
 
         # === PX4 Subscribers ===
         qos_profile = QoSProfile(
@@ -46,67 +45,55 @@ class CoordDiagnosticNode(Node):
             topic = f'{self.namespaces[i]}/out/vehicle_local_position_v1'
             self.create_subscription(VehicleLocalPosition, topic, callback, qos_profile)
 
-        # === Gazebo CLI Reader Thread ===
-        self.gz_lock = threading.Lock()
-        self.gz_thread = threading.Thread(target=self.read_gz_stream)
-        self.gz_thread.daemon = True
-        self.gz_thread.start()
+        self.subs_lidar = []
+        for i in range(3):
+            self.subs_lidar.append(self.create_subscription(
+                LaserScan,
+                f'/drone_{i}/scan',
+                lambda msg, idx=i: self.lidar_callback(msg, idx),
+                10
+            ))
+
+        # === Gazebo Dynamic Pose Subscriber (from ros_gz_bridge) ===
+        # /world/default/dynamic_pose/info (Pose_V) -> /gz_dynamic_pose (PoseArray)
+        self.sub_gz_dynamic_pose = self.create_subscription(
+            PoseArray,
+            '/gz_dynamic_pose',
+            self.gz_pose_array_callback,
+            10
+        )
 
         self.timer = self.create_timer(1.0, self.log_comparison)
-        print("🔍 診斷節點已啟動 (Corrected Property Access)...")
+        print("🔍 診斷節點已啟動 (ROS2 訂閱模式: PX4 + /gz_dynamic_pose)")
 
-    def read_gz_stream(self):
-        """獨立線程讀取 Gazebo CLI 輸出，避免緩衝區阻塞"""
-        cmd = ['gz', 'topic', '-e', '-t', '/world/default/dynamic_pose/info']
-        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        
-        re_name = re.compile(r'name:\s*"([^"]+)"')
-        re_x = re.compile(r'x:\s*([\d\.-]+)')
-        re_y = re.compile(r'y:\s*([\d\.-]+)')
-        re_z = re.compile(r'z:\s*([\d\.-]+)')
-        
-        current_model = None
-        temp_pos = {}
-        
-        # 使用 iter 不斷讀取
-        for line in iter(process.stdout.readline, ''):
-            if not self.running: break
-            line = line.strip()
-            
-            # 檢測模型名稱
-            m_name = re_name.search(line)
-            if m_name:
-                current_model = m_name.group(1)
-                temp_pos = {} 
-                continue
-            
-            if current_model and "x500_lidar_2d" in current_model:
-                mx = re_x.search(line)
-                my = re_y.search(line)
-                mz = re_z.search(line)
-                
-                if mx: temp_pos['x'] = float(mx.group(1))
-                if my: temp_pos['y'] = float(my.group(1))
-                if mz: temp_pos['z'] = float(mz.group(1))
-                
-                # 當讀到 "}" 且數據完整時更新
-                if '}' in line and 'x' in temp_pos and 'y' in temp_pos:
-                    idx = -1
-                    # Gazebo models logic:
-                    # x500_lidar_2d_0 (Instance 0) -> Leader (i=0)
-                    # x500_lidar_2d_1 (Instance 1) -> Left Wing (i=1)
-                    # x500_lidar_2d_2 (Instance 2) -> Right Wing (i=2)
-                    if 'x500_lidar_2d_0' in current_model: idx = 0
-                    elif 'x500_lidar_2d_1' in current_model: idx = 1
-                    elif 'x500_lidar_2d_2' in current_model: idx = 2
-                    
-                    if idx != -1:
-                        with self.gz_lock:
-                            # 儲存最新的 Gazebo 真實座標
-                            self.gz_pos[idx] = [temp_pos['x'], temp_pos['y'], temp_pos.get('z', 0)]
-                    
-                    current_model = None
-                    temp_pos = {}
+    def gz_pose_array_callback(self, msg):
+        # PoseArray 前三筆對應三台模型本體姿態
+        if len(msg.poses) < 3:
+            return
+
+        for i in range(3):
+            pose = msg.poses[i]
+            self.gz_pos[i] = [pose.position.x, pose.position.y, pose.position.z]
+
+    def lidar_callback(self, msg, idx):
+        finite_ranges = [r for r in msg.ranges if math.isfinite(r)]
+        if finite_ranges:
+            min_dist = min(finite_ranges)
+            front_idx = len(msg.ranges) // 2
+            front_dist = msg.ranges[front_idx] if math.isfinite(msg.ranges[front_idx]) else float('inf')
+            self.lidar_status[idx] = {
+                'count': len(msg.ranges),
+                'min_dist': min_dist,
+                'front_dist': front_dist,
+                'stamp': self.get_clock().now().nanoseconds,
+            }
+        else:
+            self.lidar_status[idx] = {
+                'count': len(msg.ranges),
+                'min_dist': float('inf'),
+                'front_dist': float('inf'),
+                'stamp': self.get_clock().now().nanoseconds,
+            }
 
     def log_comparison(self):
         print("\n" + "="*80)
@@ -115,9 +102,7 @@ class CoordDiagnosticNode(Node):
         
         for i in range(3):
             p = self.vehicle_positions[i]
-            
-            with self.gz_lock:
-                g = self.gz_pos[i]
+            g = self.gz_pos[i]
             
             role = ['Leader (Inst 0, /fmu)', 'Left Wing (Inst 1, /px4_1)', 'Right Wing (Inst 2, /px4_2)'][i]
             
@@ -167,7 +152,21 @@ class CoordDiagnosticNode(Node):
                 else:
                     print(f"  ✅ 誤差在容許範圍內")
             else:
-                print(f"  ⏳ Gazebo 數據:     等待中... (檢查 gz topic 指令)")
+                print("  ⏳ Gazebo 數據:     等待中... (檢查 /gz_dynamic_pose bridge)")
+
+            lidar = self.lidar_status[i]
+            if lidar is None:
+                print(f"  ⏳ 雷達 bridge:     等待中... (檢查 /drone_{i}/scan)")
+            else:
+                age_sec = (self.get_clock().now().nanoseconds - lidar['stamp']) / 1e9
+                if age_sec > 2.0:
+                    print(f"  ⚠️  雷達 bridge:     最後更新 {age_sec:.1f}s 前 (可能中斷)")
+                else:
+                    front_text = "inf" if not math.isfinite(lidar['front_dist']) else f"{lidar['front_dist']:.2f}m"
+                    min_text = "inf" if not math.isfinite(lidar['min_dist']) else f"{lidar['min_dist']:.2f}m"
+                    print(
+                        f"  📡 雷達 bridge:     正常 | beams={lidar['count']} | front={front_text} | min={min_text}"
+                    )
         
         print("="*80)
 
@@ -177,7 +176,6 @@ def main(args=None):
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
-        node.running = False
         pass
     finally:
         node.destroy_node()

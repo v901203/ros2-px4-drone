@@ -2,6 +2,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 from px4_msgs.msg import OffboardControlMode, TrajectorySetpoint, VehicleCommand, VehicleStatus, VehicleLocalPosition
+from sensor_msgs.msg import LaserScan
 import time
 import math
 
@@ -36,6 +37,8 @@ class ForceArmCommander(Node):
         self.vehicle_status = [{'nav_state': 0, 'arming_state': 0} for _ in range(3)]
         self.initial_positions = [None] * 3
         self.current_positions = [None] * 3  # 新增：儲存即時位置
+        self.lidar_data = [None] * 3
+        self.last_lidar_warn_time = [0.0] * 3
         self.start_time = time.time()
 
         qos_profile = QoSProfile(
@@ -50,6 +53,7 @@ class ForceArmCommander(Node):
         self.pubs_command = []
         self.subs_status = []
         self.subs_local_pos = []
+        self.subs_lidar = []
 
         for i, config in enumerate(self.drone_configs):
             ns = config['ns']
@@ -62,6 +66,9 @@ class ForceArmCommander(Node):
             self.subs_local_pos.append(self.create_subscription(
                 VehicleLocalPosition, f'{ns}/out/vehicle_local_position_v1',
                 lambda msg, idx=i: self.local_pos_callback(msg, idx), qos_profile))
+            self.subs_lidar.append(self.create_subscription(
+                LaserScan, f'/drone_{i}/scan',
+                lambda msg, idx=i: self.lidar_callback(msg, idx), 10))
 
         self.timer = self.create_timer(0.05, self.timer_callback) 
         self.get_logger().info("🔥 暴力解鎖指揮官已啟動！準備強制起飛...")
@@ -78,6 +85,23 @@ class ForceArmCommander(Node):
         if self.initial_positions[idx] is None:
             self.initial_positions[idx] = [msg.x, msg.y, msg.z]
             self.get_logger().info(f"📍 [{self.drone_configs[idx]['role']}] 初始位置鎖定: x={msg.x:.2f}, y={msg.y:.2f}, z={msg.z:.2f}")
+
+    def lidar_callback(self, msg, idx):
+        self.lidar_data[idx] = msg
+
+        if not msg.ranges:
+            return
+
+        front_index = len(msg.ranges) // 2
+        front_dist = msg.ranges[front_index]
+        if math.isfinite(front_dist) and front_dist < 1.0:
+            now = time.time()
+            # 限制警告頻率，避免日誌刷屏
+            if now - self.last_lidar_warn_time[idx] > 1.0:
+                self.last_lidar_warn_time[idx] = now
+                self.get_logger().warn(
+                    f"⚠️ 無人機 {idx} 警告：前方 {front_dist:.2f}m 有障礙物！"
+                )
 
     def arm_and_set_offboard(self, i):
         self.publish_offboard_heartbeat(i)  # 持續發送 Offboard 心跳
